@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Hand Writing - Smooth Fix</title>
+    <style>
+        /* 1. പേജ് സ്ക്രോൾ ചെയ്യുന്നത് പൂർണ്ണമായും തടയാൻ */
+        html, body { 
+            margin: 0; 
+            padding: 0; 
+            width: 100%; 
+            height: 100%; 
+            overflow: hidden !important; 
+            position: fixed; 
+            background: #222;
+            font-family: sans-serif;
+            -webkit-user-select: none; 
+            user-select: none; 
+        }
+        
+        #toolbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(255, 255, 255, 0.98); padding: 8px;
+            display: flex; flex-direction: column; gap: 5px; box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+        }
+        .tool-row { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; flex-wrap: wrap; }
+        
+        .slider-group { 
+            display: flex; align-items: center; gap: 5px; font-size: 11px; 
+            font-weight: bold; background: #eee; padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; 
+        }
+        .val-disp { color: #d32f2f; min-width: 25px; display: inline-block; text-align: center; font-size: 13px; font-weight: bold; }
+
+        input[type="text"] { padding: 6px; border: 1.5px solid #bbb; border-radius: 6px; width: 140px; text-align: right; font-size: 14px; }
+        .color-btn { width: 22px; height: 22px; border-radius: 50%; border: 2px solid white; cursor: pointer; }
+        
+        button { padding: 8px 12px; font-size: 12px; border: none; border-radius: 6px; background: #0077ff; color: white; cursor: pointer; font-weight: bold; }
+        
+        #fs-controls { position: fixed; top: 15px; right: 15px; z-index: 200; display: none; flex-direction: row; gap: 10px; }
+
+        #bottom-controls {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+            background: rgba(255, 255, 255, 0.9); padding: 5px;
+            display: flex; flex-direction: column; gap: 5px; align-items: center;
+        }
+
+        /* 2. വ്യൂപോർട്ടിന് പുറത്തേക്ക് ഒന്നും പോകാതെ നോക്കുന്നു */
+        #viewport { 
+            width: 100vw; 
+            height: 100vh; 
+            overflow: hidden; 
+            position: relative; 
+            background: #444;
+            touch-action: none; 
+        }
+        
+        #content-layer {
+            position: absolute; width: 5000px; height: 5000px; background: white; 
+            top: 50%; left: 50%; margin-top: -2500px; margin-left: -2500px;
+        }
+        #bg-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; z-index: 0; display: none; }
+        #trace-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 380px; color: rgba(242, 242, 242, 0.6); pointer-events: none; z-index: 1; font-family: serif; }
+        #board { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; touch-action: none; }
+        
+        .fade-out { animation: fadeEffect 0.5s forwards; animation-delay: 0.5s; }
+        @keyframes fadeEffect { from { opacity: 1; } to { opacity: 0; } }
+
+        #pencil-hand { position: absolute; pointer-events: none; z-index: 1000; display: none; transform-origin: 0 0; width: 350px; }
+    </style>
+</head>
+<body>
+
+<div id="toolbar">
+    <div class="tool-row">
+        <input type="text" id="arabicInput" placeholder="അറബി ടൈപ്പ് ചെയ്യുക" oninput="updateTraceText()">
+        <button onclick="document.getElementById('imageLoader').click()" style="background:#ff9800;">Upload</button>
+        <input type="file" id="imageLoader" style="display:none;" accept="image/*" onchange="handleImage(event)">
+        <button onclick="toggleFullScreen()" style="background:#607d8b;">Full Screen</button>
+        <button id="mainModeBtn" onclick="toggleMode()" style="background:#28a745;">Pen Mode</button>
+        <button id="mainLockBtn" onclick="toggleLock()" style="background:#ff5722;">Fade: ON</button>
+    </div>
+    <div class="tool-row">
+        <div class="color-btn" style="background: black;" onclick="setColor('black')"></div>
+        <div class="color-btn" style="background: red;" onclick="setColor('red')"></div>
+        <div class="color-btn" style="background: blue;" onclick="setColor('blue')"></div>
+        <input type="color" oninput="setColor(this.value)" style="width:25px; height:25px; border:none; background:transparent;">
+        <button onclick="undo()">Undo</button>
+        <button onclick="clearBoard()" style="background:#f44336;">Clear</button>
+        
+        <div class="slider-group"> 
+            X: <input type="range" id="offsetX" min="0" max="300" value="80" oninput="document.getElementById('vX').innerText=this.value"> 
+            <span id="vX" class="val-disp">80</span>
+        </div>
+        <div class="slider-group"> 
+            Y: <input type="range" id="offsetY" min="0" max="300" value="133" oninput="document.getElementById('vY').innerText=this.value"> 
+            <span id="vY" class="val-disp">133</span>
+        </div>
+        <div class="slider-group"> 
+            Size: <input type="range" id="handSize" min="100" max="800" value="350" oninput="updateHandSize(this.value)"> 
+            <span id="vS" class="val-disp">350</span>
+        </div>
+    </div>
+</div>
+
+<div id="fs-controls">
+    <button id="fsLockBtn" onclick="toggleLock()" style="background:#ff5722;">Fade: ON</button>
+    <button id="fsModeBtn" onclick="toggleMode()" style="background:#28a745;">Pen</button>
+    <button onclick="toggleFullScreen()" style="background:#dc3545;">Exit</button>
+</div>
+
+<div id="bottom-controls">
+    <div class="tool-row">
+        <span>Zoom:</span> <input type="range" id="zoomSlider" min="0.5" max="3" step="0.1" value="1" oninput="updateZoom(this.value)">
+        <span>Pen Size:</span> <input type="range" id="penWidth" min="2" max="60" value="12">
+    </div>
+</div>
+
+<div id="viewport">
+    <div id="content-layer">
+        <img id="bg-image" src="" />
+        <div id="trace-text"></div>
+        <svg id="board" xmlns="http://www.w3.org/2000/svg" width="5000" height="5000"></svg>
+        <img id="pencil-hand" src="hand.png" />
+    </div>
+</div>
+
+<script>
+    const svg = document.getElementById("board");
+    const contentLayer = document.getElementById("content-layer");
+    const traceTextDiv = document.getElementById("trace-text");
+    const bgImage = document.getElementById("bg-image");
+    const mainModeBtn = document.getElementById("mainModeBtn");
+    const fsModeBtn = document.getElementById("fsModeBtn");
+    const mainLockBtn = document.getElementById("mainLockBtn");
+    const fsLockBtn = document.getElementById("fsLockBtn");
+    const toolbar = document.getElementById("toolbar");
+    const bottomControls = document.getElementById("bottom-controls");
+    const pencilHand = document.getElementById("pencil-hand");
+    
+    const offsetXSlider = document.getElementById("offsetX");
+    const offsetYSlider = document.getElementById("offsetY");
+    const handSizeSlider = document.getElementById("handSize");
+    const penWidthInput = document.getElementById("penWidth");
+    const zoomSlider = document.getElementById("zoomSlider");
+
+    let scale = 1, posX = 0, posY = 0, isMoveMode = false, drawing = false, isFullScreen = false, isLocked = false;
+    let strokes = [], currentPath = null, currentColor = "black", evCache = [], prevDiff = -1;
+
+    function updateHandSize(val) { 
+        // വലിപ്പം അപ്‌ഡേറ്റ് ചെയ്യുമ്പോൾ scale കൂടി കണക്കിലെടുക്കുന്നു
+        pencilHand.style.width = (val / scale) + "px"; 
+        document.getElementById('vS').innerText = val;
+    }
+
+    function toggleLock() {
+        isLocked = !isLocked;
+        const txt = isLocked ? "Fade: OFF" : "Fade: ON";
+        const clr = isLocked ? "#9e9e9e" : "#ff5722";
+        mainLockBtn.innerText = txt; mainLockBtn.style.background = clr;
+        fsLockBtn.innerText = txt; fsLockBtn.style.background = clr;
+    }
+
+    function toggleFullScreen() {
+        if (!isFullScreen) {
+            document.documentElement.requestFullscreen?.();
+            toolbar.style.display = "none"; bottomControls.style.display = "none";
+            document.getElementById("fs-controls").style.display = "flex";
+        } else {
+            if(document.fullscreenElement) document.exitFullscreen();
+            toolbar.style.display = "flex"; bottomControls.style.display = "flex";
+            document.getElementById("fs-controls").style.display = "none";
+        }
+        isFullScreen = !isFullScreen;
+    }
+
+    function handleImage(e) {
+        const reader = new FileReader();
+        reader.onload = (ev) => { bgImage.src = ev.target.result; bgImage.style.display = "block"; };
+        reader.readAsDataURL(e.target.files[0]);
+    }
+
+    function toggleMode() {
+        isMoveMode = !isMoveMode;
+        const txt = isMoveMode ? "Move Mode" : "Pen Mode";
+        const bg = isMoveMode ? "#dc3545" : "#28a745";
+        mainModeBtn.innerText = txt; mainModeBtn.style.background = bg;
+        fsModeBtn.innerText = isMoveMode ? "Move" : "Pen"; fsModeBtn.style.background = bg;
+    }
+
+    function setColor(c) { currentColor = c; }
+    function applyTransform() { contentLayer.style.transform = `translate(${posX}px, ${posY}px) scale(${scale})`; }
+    function updateTraceText() { traceTextDiv.innerText = document.getElementById("arabicInput").value; }
+    function updateZoom(v) { scale = parseFloat(v); applyTransform(); }
+
+    function getCoords(e) {
+        const rect = contentLayer.getBoundingClientRect();
+        return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
+    }
+
+    // 3. കൈയുടെ വലിപ്പവും പൊസിഷനും സൂം ലെവലിന് അനുസരിച്ച് ക്രമീകരിക്കുന്നു
+    function updateHandPos(x, y) {
+        let s = scale;
+        pencilHand.style.width = (handSizeSlider.value / s) + "px"; 
+        pencilHand.style.left = (x - (offsetXSlider.value / s)) + "px";
+        pencilHand.style.top = (y - (offsetYSlider.value / s)) + "px";
+    }
+
+    svg.onpointerdown = (e) => {
+        evCache.push(e);
+        if (isMoveMode) { this.lastX = e.clientX; this.lastY = e.clientY; drawing = true; }
+        else if (e.buttons === 1) {
+            drawing = true;
+            const c = getCoords(e);
+            pencilHand.style.display = "block";
+            updateHandPos(c.x, c.y);
+            currentPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            currentPath.setAttribute("d", `M ${c.x} ${c.y}`);
+            currentPath.setAttribute("stroke", currentColor);
+            currentPath.setAttribute("stroke-width", penWidthInput.value / scale);
+            currentPath.setAttribute("fill", "none");
+            currentPath.setAttribute("stroke-linecap", "round");
+            currentPath.setAttribute("stroke-linejoin", "round");
+            svg.appendChild(currentPath);
+            strokes.push(currentPath);
+        }
+    };
+
+    svg.onpointermove = (e) => {
+        for (let i = 0; i < evCache.length; i++) { if (e.pointerId === evCache[i].pointerId) { evCache[i] = e; break; } }
+        if (drawing) {
+            if (isMoveMode) {
+                if (evCache.length === 2) {
+                    let d = Math.hypot(evCache[0].clientX - evCache[1].clientX, evCache[0].clientY - evCache[1].clientY);
+                    if (prevDiff > 0) { scale *= (d / prevDiff); zoomSlider.value = scale; applyTransform(); }
+                    prevDiff = d;
+                } else {
+                    posX += (e.clientX - this.lastX); posY += (e.clientY - this.lastY);
+                    this.lastX = e.clientX; this.lastY = e.clientY; applyTransform();
+                }
+            } else {
+                const c = getCoords(e);
+                currentPath.setAttribute("d", currentPath.getAttribute("d") + ` L ${c.x} ${c.y}`);
+                updateHandPos(c.x, c.y);
+            }
+        }
+    };
+
+    svg.onpointerup = svg.onpointerleave = (e) => {
+        if (drawing && !isMoveMode && currentPath && !isLocked) {
+            const p = currentPath;
+            p.classList.add('fade-out');
+            setTimeout(() => { if (p.parentNode) { svg.removeChild(p); strokes = strokes.filter(s => s !== p); } }, 1000);
+        }
+        drawing = false; pencilHand.style.display = "none";
+        evCache = evCache.filter(ev => ev.pointerId !== e.pointerId);
+        if (evCache.length < 2) prevDiff = -1;
+    };
+
+    function undo() { if (strokes.length > 0) svg.removeChild(strokes.pop()); }
+    function clearBoard() { 
+        svg.innerHTML = ""; strokes = []; bgImage.src = ""; bgImage.style.display = "none"; 
+        traceTextDiv.innerText = ""; document.getElementById("arabicInput").value = "";
+    }
+</script>
+</body>
+</html>
